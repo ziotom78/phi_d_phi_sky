@@ -1,0 +1,20 @@
+\begin{thebibliography}{2}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Collaboration(2013)]{PlanckLFICalibration2013}
+Planck Collaboration.
+\newblock {Planck 2013 results. V. LFI calibration}.
+\newblock \emph{ArXiv e-prints}, March 2013.
+
+\bibitem[Wandelt and G\'orski(2001)]{PhysRevD.63.123002}
+Benjamin~D. Wandelt and Krzysztof~M. G\'orski.
+\newblock Fast convolution on the sphere.
+\newblock \emph{Phys. Rev. D}, 63:\penalty0 123002, May 2001.
+\newblock \doi{10.1103/PhysRevD.63.123002}.
+\newblock URL \url{http://link.aps.org/doi/10.1103/PhysRevD.63.123002}.
+
+\end{thebibliography}

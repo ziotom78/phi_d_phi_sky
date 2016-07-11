@@ -1,0 +1,2334 @@
+% -*- mode: Noweb; noweb-code-mode: delphi-mode -*-
+
+\documentclass[a4paper,10pt,twoside]{article}
+\usepackage{a4wide}
+\usepackage{amsmath}
+\usepackage{noweb}
+\usepackage{fancyhdr}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{ccaption}
+\usepackage{textcomp}
+\usepackage{titlesec}
+%\usepackage{mathpazo}
+\usepackage[round]{natbib}
+\usepackage{pretzel-latex}
+%\usepackage[utf8]{inputenc}
+\usepackage{fontspec}
+
+\noweboptions{smallcode,longchunks}
+\def\nwendcode{\endtrivlist \endgroup \vfil\penalty10\vfilneg}
+\let\nwdocspar=\smallbreak
+
+% Command used to indicate a section
+\newcommand{\sectmark}{\S\ }
+
+\titleformat{\section}[block]
+  {\centering\normalfont\bfseries}
+  {\sectmark\thesection.}{.5em}{}
+\titleformat{\subsection}[runin]
+  {\normalfont\bfseries}
+  {\thesubsection.}{.5em}{}[. ]
+\titleformat{\subsubsection}[runin]
+  {\normalfont\bfseries}
+  {}{.2em}{}[. ]
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\pagestyle{fancy}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\sectionmark}[1]{%
+  \markright{\thesection.\ #1}}
+\fancyhf{}
+\fancyhead[L,RO]{\bfseries\thepage}
+\fancyhead[LO]{\bfseries\rightmark}
+\fancyhead[RE]{\bfseries Calculation of $\phisky$}
+
+\fancypagestyle{plain}{%
+  \fancyhf{}
+  \fancyfoot[C]{\thepage}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0pt}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newcommand{\ud}{\mathrm{d}}
+\newcommand{\phid}{\phi_D}
+\newcommand{\phisky}{\phi_{\mathrm{sky}}}
+\newcommand{\fsl}{f_\mathrm{sl}}
+\newcommand{\Tsky}{T_{\mathrm{sky}}}
+\newcommand{\Tskymeas}{\tilde{T}_{\mathrm{sky}}}
+\newcommand{\mmatrix}{\mathcal{M}}
+
+\captionnamefont{\small\bfseries}
+\captiontitlefont{\small\itshape}
+
+\hypersetup{pdftitle={Calculation of phi_sky},
+pdfauthor=Maurizio Tomasi,
+pdfsubject={Commented implementation of two Pascal programs to
+  calculate phi_D and phi_sky},
+pdfkeywords={CMB {data analysis} {optics}},
+pdfborder={0 0 0}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\bibliographystyle{plainnat}
+
+\title{Calculation of $\phid$ and $\phisky$}
+\author{Maurizio Tomasi}
+\date{August 2014}
+\maketitle
+
+\begin{abstract}
+  In this document I provide the implementation of two programs to
+  calculate the value of $\phid$ and $\phisky$ as a function of time
+  for a LFI-like survey. An overview of the theory is provided in the
+  first part of the report. Then, the full source code of the two
+  programs is presented and commented in detail. The two programs are
+  written in Pascal and can be compiled using the Free Pascal
+  compiler.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+\label{sec:introduction}
+
+This document provides the complete implementation of two stand-alone
+programs to compute the impact of beam convolution in the estimation
+of the calibration constant and of the sky temperature measured by the
+Planck/LFI radiometers. Such analysis is important to compare the
+approximation of a Dirac delta beam in the calibration (the so-called
+``pencil-beam'' approximation) with the exploitation the knowledge of
+the beam response over the full $4\pi$ solid angle (the so-called
+``$4\pi$ calibration'').
+
+Both the pencil-beam approximation and the $4\pi$ calibration have
+been used in important full-sky CMB experiments. The WMAP and HFI
+teams have always used the pencil-beam approximation, as well as the
+LFI team for the 2013 data release \citep{PlanckLFICalibration2013}.
+In 2014, the LFI team published the results of the analysis of the
+full Planck dataset using a new approach where the knowledge of the
+$4\pi$ beam has been taken into account during the calibration of the
+Time Ordered Data (TOD, a time series of voltages) into Time Ordered
+Information (TOI, a time series of thermodynamic temperatures).
+
+The purpose of this note is to define two new quantities, $\phid$ and
+$\phisky$, which quantify the impact of the two approaches to
+calibration on the TOIs, and to provide the implementation of two
+command-line programs which allow to measure such quantities out of
+the TOIs.
+
+\subsection{Definition of $\phisky$ and $\phid$}
+
+The definition of the quantity $\phid$, as well as an explanation of
+its meaning, is provided in \citet{PlanckLFICalibration2013}. Consider
+the output of a differential radiometer:
+\begin{equation}
+  \label{eq:radiometerEquation}
+  V_\mathrm{out} (t) = G(t) \times \left( B * (\Tsky + D)\right) + M,
+\end{equation}
+where $D(\theta, \varphi)$ is the temperature of the Doppler CMB
+dipole used for the calibration of the instrument, $B(\theta,
+\varphi)$ is the beam response along some direction, $\Tsky$ is the
+temperature of the sky (with the exception of the dipole), and $M$ is
+an instrumental offset. The quantity $\phid$ is defined as
+\begin{equation}
+  \label{eq:phiDDefinition}
+  \phid = \frac{\partial_t \bigl(B_s * D\bigr)}{\partial_t \bigl(B_m * D\bigr)}.
+\end{equation}
+and it is used to relate the estimation $\tilde G$ of the true
+calibration constant $G$ (in K/V), since the following relation holds:
+\begin{equation}
+  \label{eq:phiDandG}
+  \tilde G = G (1 - \fsl)(1 + \phid)
+\end{equation}
+where $\fsl$ is the fraction of the beam which is not within the main
+lobe. Eq.~\eqref{eq:phiDandG} only holds under the assumption of a
+pencil-beam approximation, because if a $4\pi$ beam calibration is
+employed (and $B$ is known without error), then
+\begin{equation}
+  \label{eq:phiDandGwithFourPi}
+  \tilde G = G.
+\end{equation}
+
+Let's now assume a perfect calibration ($\tilde G = G$). Then the
+measured temperature $\Tskymeas(t)$ at some time $t$ is
+\begin{equation}
+  \label{eq:skyConvolution}
+  \Tskymeas(t) = \bigl(B * \Tsky\bigr)(t) + M =
+  \bigl(B_m * \Tsky\bigr)(t) + \bigl(B_s * \Tsky\bigr)(t) + M,
+\end{equation}
+where $B = B_m + B_s$ is the $4\pi$ beam divided into a ``main'' and a
+``side'' part (the Planck/LFI convention is that $B_m(\vec x) = 0$ for
+any direction $\vec x$ farther than $5^\circ$ from the beam axis), and
+$B * \Tsky$ is the TOD of the sky temperature convolved with the beam
+(the beam moves with time, so this frame of reference is continuously
+changing). If we neglect angular scales smaller than the width of the
+main beam, then
+\begin{equation}
+  \label{eq:mainBeamApproximation}
+  B_m * \Tsky \approx (1 - \fsl) \Tsky
+\end{equation}
+along any direction $\vec x$. Therefore, Eq.~\eqref{eq:skyConvolution}
+becomes
+\begin{equation}
+  \label{eq:skyConvolutionSimplified}
+  \Tskymeas(t) = (1 - \fsl) \Tsky(t) + \bigl(B_s * \Tsky\bigr)(t) + M.
+\end{equation}
+Solving for $\Tsky(t)$, we get
+\begin{equation}
+  \label{eq:Tsky}
+  \Tsky(t) = \frac{\Tskymeas(t) - \bigl(B_s * \Tsky\bigr)(t) - M}{1 -
+    \fsl}.
+\end{equation}
+Since we are interested in expressing Eq.~\eqref{eq:Tsky} in the form
+$\Tsky = \alpha \Tskymeas + T_0$, we define the new quantity
+\begin{equation}
+  \label{eq:phiSkyDefinition}
+  \phisky(t) \equiv \frac{\bigl(B_s * \Tsky\bigr)(t)}{\Tskymeas(t)} =
+  \frac{\bigl(B_s * \Tsky\bigr)(t)}{\bigl(B * \Tsky\bigr)(t) + M},
+\end{equation}
+so that
+\begin{equation}
+\Tsky(t) = \frac{1 - \phisky}{1 - \fsl} \Tskymeas(t) + T_0,
+\end{equation}
+and $\alpha = 1 - \phisky$. The quantity $\phisky$ defined by
+Eq.~\eqref{eq:phiSkyDefinition} quantifies the impact of sidelobes in
+the measurement of the sky temperature $\Tsky$, and it is the main
+subject of this note. Since it is difficult to estimate the value of
+$M$, we will use the first equality with the $\Tskymeas$ term in the
+following.
+
+\subsection{Computational issues}
+
+There are two major problems in computing $\phisky$ using
+Eq.~\eqref{eq:phiSkyDefinition}:
+\begin{enumerate}
+\item Computations must be done in time-domain, so that a lot of data
+  must be processed. (Planck/LFI pointing data are 1\,GB/yr for
+  30\,GHz radiometers and 3\,GB/yr for 70\,GHz radiometers:
+  considering all the 22 radiometers, the sum is 53 GB/yr.)
+\item Eq.~\eqref{eq:phiSkyDefinition} requires the computation of a
+  convolution over the $4\pi$ sphere. This is usually expensive to
+  compute numerically.
+\end{enumerate}
+The solution to the first problem is to massively parallelize the
+code. Fortunately, this is not difficult, as the algorithm is
+``embarassingly parallel'': if $t_1 \not= t_2$, then $\phid(t_1)$ and
+$\phid(t_2)$ do not depend on each other and can be computed by
+separated processes (the same applies to $\phisky$). We use the
+Message Passing Interface (MPI) to parallelize the code, assuming a
+distributed memory environment. About the second problem, there are
+two solutions:
+\begin{enumerate}
+\item Use the fast convolution algorithm described by
+  \citet{PhysRevD.63.123002}, which greatly reduces the computation
+  times by pre-computing a mathematical object, called a
+  \emph{ringset}, which is then used to estimate the value of the
+  convolution at any point;
+\item If one of the two terms of the convolution is the dipole, an
+  approach that is even faster than ringsets is to use the so-called
+  \emph{convolution matrices}, first used by
+  \citet{PlanckLFICalibration2013}.
+\end{enumerate}
+
+Several inputs are required to compute $\phid$ and $\phisky$:
+\begin{enumerate}
+\item Pointing information. These can either be provided as FITS files
+  or as files compressed using \texttt{squeezer}. (The second option
+  is much faster, because compressed files are $\sim 10$ times smaller
+  than FITS files and therefore reduce the time used for I/O.)
+\item Temperatures (needed by $\phisky$ for the term $\Tskymeas$ in
+  Eq.~\ref{eq:phiSkyDefinition}). Like pointing informations, these can
+  either be saved in FITS files or in compressed files produced by
+  \texttt{squeezer}.
+\item The calculation of $\phisky$ requires FITS files containing
+  ringsets, i.e., a set of numbers which can be used to numerically
+  estimate the convolution between a beam model and a sky signal;
+\item The calculation of $\phid$ uses convolution matrices instead of
+  ringsets.
+\item Since $\phid$ requires to model the dipole $D$, which has a
+  component due to the orbital motion of the spacecraft around the
+  Sun, to apply Eq.~\eqref{eq:phiDDefinition} the program needs a file
+  containing the speed of the spacecraft as a function of time.
+\end{enumerate}
+Moreover, the user is expected to provide the parameters required for
+the computation in a \emph{parameter file}, whose syntax is similar to
+the INI files used by old versions of
+Windows\footnote{See \url{http://en.wikipedia.org/wiki/INI_file}.}.
+
+
+\subsection{How numerical codes are implemented}
+
+In this document we will provide the complete source code of two
+programs, [[phisky]] and [[phid]], which can be used to estimate the
+value of $\phisky$ and $\phid$ for the Planck/LFI radiometers. We use
+a programming technique called \emph{literate programming}, where both
+the program and the documentation (this report) are written at the
+same time \emph{in the same file}. We use the NoWeb
+system\footnote{\url{http://www.cs.tufts.edu/~nr/noweb/}.} by Norman
+Ramsey to implement this idea: two programs, called \emph{tangler} and
+\emph{weaver}, are then used to extract the source code to compile
+([[notangle]]) and the \LaTeX{} file used to produce a standalone
+document ([[noweave]]).
+
+We chose not to implement both calculations in the same program, but
+to implement two separate programs. This leads inevitably to some code
+duplication, which however is mitigated by the fact that we are using
+literate programming techniques. The advantage of having two programs
+lies mainly in the fact that computing $\phid$ is much faster than
+computing $\phisky$, and yet it is the first term which usually
+dominates (i.e., $\phid \gg \phisky$). So it is likely that in a
+variety of situations it is not required to compute both of them.
+
+The two programs, [[phisky]] and [[phid]], are written using a dialect
+of Pascal implemented by the Free
+Pascal\footnote{\url{http://www.freepascal.org/}.} compiler (version
+2.6.x or above). Here are the skeleton implementation of [[phid]];
+we will fill all the details later:
+<<phid.pas>>=
+{ -*- mode: delphi -*- }
+program CalcPhiD;
+
+{$mode objfpc}{$h+}
+uses Classes, SysUtils, INIFiles, DataTypes, Squeezer, Cfitsio, Healpix, Mpi,
+     RotMatrix, SatelliteVelocities, ConvolvedParams;
+
+{$linklib c} { Required by OpenMPI/MPICH }
+
+const
+    ProgramName = 'phid';
+    <<General-purpose constants>>
+
+type
+    <<Basic type definitions (shared between [[phisky]] and [[phid]])>>
+    <<Type definitions used by [[phid]]>>
+
+<<Basic functions>>
+<<General functions (shared between [[phisky]] and [[phid]])>>
+<<High-level functions for the [[phid]] program>>
+
+var
+    <<Variables used by [[phid]] and [[phisky]] in the main loop>>
+    <<Variables used in the main loop of [[phid]]>>
+
+begin
+    Mpi.Init;
+    try
+        try
+            <<Implementation of [[phid]]>>
+        finally
+            Mpi.Finalize;
+        end;
+    except
+        on E : Exception do WriteLn('Error: ' + E.message);
+    end;
+end.
+@
+
+(The units [[Classes]], [[SysUtils]], and [[INIFiles]] are part of the
+Free Pascal Standard Library.)
+
+And here is the skeleton of [[phisky]]; it essentially shares the same
+structure:
+<<phisky.pas>>=
+{ -*- mode: delphi -*- }
+program CalcPhiSky;
+
+{$mode objfpc}{$h+}
+uses Classes, SysUtils, INIFiles, DataTypes, Ringsets, Squeezer, Cfitsio, Healpix, Mpi;
+
+{$linklib c} { Required by OpenMPI/MPICH }
+
+const
+    ProgramName = 'phisky';
+    <<General-purpose constants>>
+
+type
+    <<Basic type definitions (shared between [[phisky]] and [[phid]])>>
+    <<Type definitions used by [[phisky]]>>
+
+<<Basic functions>>
+<<General functions (shared between [[phisky]] and [[phid]])>>
+<<High-level functions for the [[phisky]] program>>
+
+var
+    <<Variables used by [[phid]] and [[phisky]] in the main loop>>
+    <<Variables used in the main loop of [[phisky]]>>
+
+begin
+    Mpi.Init;
+    try
+        try
+            <<Implementation of [[phisky]]>>
+        finally
+            Mpi.Finalize;
+        end;
+    except
+        on E : Exception do WriteLn('Error: ' + E.message);
+    end;
+end.
+@
+
+In the next sections we will implement each of the placeholders
+indicated in the code with $\left<\ldots\right>$. We will sometimes
+used the procedure [[Log]], which prints some status message on the
+screen alongside with a timestamp. Knowing how this procedure works is
+not important for understanding the logic of the two programs, so we
+moved its implementation and description in Appendix~\ref{sec:Logging}
+
+\section{Numerical estimation of $\phisky$ and $\phid$}
+
+\subsection{The overall structure of the program}
+\label{sec:OverallStructure}
+
+The basic steps followed by the two programs, [[phid]] and [[phisky]],
+are quite the same. They can be summed up as follows:
+\begin{enumerate}
+\item Read a set of convolution matrices ([[phid]]) or ringsets
+  ([[phisky]];
+\item Read the pointing information for each given OD (these include:
+  the time, the direction $\theta, \varphi$ of the beam axis in the
+  sky, and the orientation $\psi$ around the beam axis); the program
+  [[phisky]] must also read TOD containing the temperatures
+  $\Tskymeas(t)$;
+\item Apply Eq.~\eqref{eq:phiDDefinition} or
+  Eq.~\eqref{eq:phiSkyDefinition} for each pointing sample
+  and orientation to compute $\phid$/$\phisky$.
+\item\label{itm:savephiskytod} Save the values of $\phid$/$\phisky$ as
+  a TOD (this is optional, as the files are going to be huge).
+\item\label{itm:reducedimensionality} As the user is not likely to
+  want all the TODs saved to disk (because of their size), is useful
+  to implement a few techniques to reduce the dimensionality of the
+  TODs. This step produces so-called \emph{reduced TODs} of the
+  quantities $\phid$/$\phisky$.
+\item Save the reduced TODs.
+\end{enumerate}
+
+The analysis of the program's results is usually carried using the
+reduced TODs mentioned in step~\ref{itm:reducedimensionality}. In this
+case the code compresses the TODs so that they can be saved in files
+of acceptable size; see Sect.~\ref{sec:dimensionalityreduction} for
+further details about this.
+
+We can now implement the $\left<\textit{Main program}\right>$
+placeholders seen in the code above. For [[phid]] the main program
+will follow these steps:
+<<Implementation of [[phid]]>>=
+<<Check program options>>
+<<Subdivide the pointing files among the MPI processes>>
+<<Read the $\mmatrix$ matrices and the satellite velocities>>
+<<Initialize the structures used to compress the TODs>>
+<<Apply Eq.~\eqref{eq:phiDDefinition} to the data in each pointing/temperature file>>
+<<Compress the TODs and produce reduced TODs>>
+<<Save the reduced TODs>>
+@
+
+The [[phisky]] program differs slightly, as its set of input files is
+somewhat different. However, a number of steps are exactly the same,
+so we are going to reuse their implementation:
+<<Implementation of [[phisky]]>>=
+<<Check program options>>
+<<Subdivide the pointing files among the MPI processes>>
+<<Read the ringsets>>
+<<Initialize the structures used to compress the TODs>>
+<<Apply Eq.~\eqref{eq:phiSkyDefinition} to the data in each pointing/temperature file>>
+<<Compress the TODs and produce reduced TODs>>
+<<Save the reduced TODs>>
+@
+
+\subsection{Reading the configuration file}
+\label{sec:readConfigurationFile}
+
+We begin the discussion of the program source code by describing how
+the parameters of the computation are stored in memory. (Every other
+piece of the software is going to use these parameters, so it is good
+to discuss them first.)
+
+\subsubsection{How parameters are stored in memory}
+
+The most straightforward approach to keep the user's settings in
+memory would be to use many scattered global variables, but we prefer
+to keep everything within one structure, in order to pass such
+settings to procedures and functions more easily. The [[phid]] program
+keeps its configuration in the [[TPhiDConfiguration]] structure:
+
+<<Type definitions used by [[phid]]>>=
+TPhiDConfiguration = record
+    PointingFileNames : TStringArray;
+    SlMatrixFileNames : TStringArray;
+    MbMatrixFileNames : TStringArray;
+    SatelliteVelocityFileName : String;
+    DipoleParams : TDipole;
+
+    Quantiles : TPercentageArray;
+    QuantileTableFileName : String;
+
+    Nside : Uint16;
+    OutputMapFileName : String;
+
+    case SaveTods : Boolean of
+    True: (TodFilePath : ShortString); { We need a ShortString here! }
+end;
+@ %def TPhiDConfiguration
+
+(The type [[TPercentageArray]] is defined later.)
+
+The [[phisky]] program uses a different structure:
+<<Type definitions used by [[phisky]]>>=
+TPhiSkyConfiguration = record
+    MbRingsetFileNames : TStringArray;
+    SlRingsetFileNames : TStringArray;
+    PointingFileNames : TStringArray;
+    TemperatureFileNames : TStringArray;
+
+    QualityFlagMask : UInt32;
+
+    InterpolationOrder : Byte;
+    Quantiles : TPercentageArray;
+    QuantileTableFileName : String;
+
+    Nside : Uint16;
+    OutputMapFileName : String;
+
+    case SaveTods : Boolean of
+    True: (TodFilePath : ShortString); { We need a ShortString here! }
+end;
+@ %def TPhiSkyConfiguration
+
+A few notes about the parameters defined in the two structures:
+\begin{enumerate}
+\item The pair of structure members
+  [[MbMatrixFileNames]]/[[SlMatrixFileNames]] (used by [[phid]]) and
+  [[MbRingsetFileNames]]/[[SlRingsetFileNames]] (used by [[phisky]])
+  are arrays of strings. They contain the names of the convolution
+  matrices/ringsets that must be used in the computation of the
+  convolutions between the beam and the dipole/sky signal in
+  Eq.~\eqref{eq:phiDDefinition} and Eq.~\eqref{eq:phiSkyDefinition}.
+  More than one matrix/ringset is allowed, as $T_\mathrm{sky}$ is
+  typically the sum of many contributions (e.g., the Galactic emission
+  plus the CMB) and in the Planck/LFI collaboration it is
+  customary\footnote{This is motivated by the fact that the numerical
+    codes used to model the beam require different parameters in the
+    two regions and uses different gridding schemes.} to provide beam
+  models where $B_{\mathrm{sl}}$ is split into two parts: the
+  ``near-lobe'' part and the ``far-lobe'' part.
+\item The pointing files are listed in the [[PointingFileNames]]
+  variable. At the time of writing, Planck/LFI records them into one
+  file per operating day (OD).
+\item The $\Tskymeas$ files (``temperature'') used by [[phisky]] are
+  listed in the [[TemperatureFileNames]]. There is a one-to-one
+  correspondence between each of these files and the pointing files.
+\item We have mentioned in Sect.~\ref{sec:OverallStructure} that we
+  need to reduce the dimensionality of the $\phid$/$\phisky$ TODs.
+  Since the input data is separated into many pointing files, one
+  possible approach is to compute all the $\phid$/$\phisky$ values
+  from each pointing file, and then save only a bunch of statistical
+  quantities per file. Such quantities should provide a fairly
+  sufficient description of the distribution of these values: in our
+  case, we save the number of samples, the minimum and maximum value,
+  the average, plus an user-specified number of quantiles. The member
+  [[Quantiles]] is a list of the quantiles requested by the user,
+  which will be saved in a FITS file whose name is specified by the
+  member [[QuantileTableFileName]].
+\item Another way to reduce the dimensionality of the data is to
+  project all the $\phid$/$\phisky$ values on a Healpix map. The
+  [[Nside]] parameter specifies the resolution of the map, while the
+  [[OutputMapFileName]] parameter is the name of the FITS file that
+  will be created by the program.
+\end{enumerate}
+
+\subsubsection{Reading the parameters from a text file}
+
+The value of a [[TPhiDConfiguration]] and [[TPhiSkyConfiguration]]
+variable is initialized by reading a so-called INI
+file\footnote{\url{http://en.wikipedia.org/wiki/INI_file}.}. We are
+not going to provide here the details of the parsing of such files:
+see Appendix~\ref{sec:parsingINIFiles}
+
+Here is an example of a configuration file for [[phid]]:
+\begin{verbatim}
+[Pointings]
+template = /storage/pointings/LFI27M_%.4d.sqz
+first_index = 91
+last_index = 1604
+
+[Main beam matrices]
+file_name_1 = /storage/convmat/convmat_mb.dat
+
+[Sidelobe matrices]
+sidelobes = /storage/convmat/convmat_nl.dat
+sidelobes = /storage/convmat/convmat_fl.dat
+
+[Input]
+satellite_velocity_file = /storage/planck_velocity.fits
+dipole_dir_theta_ecl = 1.7656131194951572
+dipole_dir_phi_ecl = 2.9958896005735780
+dipole_speed_m_s = 370082.2332
+
+[Output]
+save_tods = true
+tod_file_path = /storage/phid_tods/
+quantiles = 25,50,75
+quantiles_file_name = /storage/quantiles.fits
+map_nside = 64
+output_file_name = /storage/phid_maps/LFI27M_phid.fits
+\end{verbatim}
+
+Similarly, a INI file accepted by [[phisky]] looks like the following:
+\begin{verbatim}
+[Pointings]
+template = /storage/pointings/LFI27M_%.4d.sqz
+first_index = 91
+last_index = 1604
+
+[Temperatures]
+template = /storage/reduced/LFI27M_%.4d.sqz
+first_index = 91
+last_index = 1604
+
+[Main ringsets]
+file_name_1 = /storage/ringsets/main_beam/galaxy.fits
+file_name_2 = /storage/ringsets/main_beam/cmb.fits
+
+[Side ringsets]
+file_name_1 = /storage/ringsets/near_sidelobes/galaxy.fits
+file_name_2 = /storage/ringsets/near_sidelobes/cmb.fits
+file_name_3 = /storage/ringsets/far_sidelobes/galaxy.fits
+file_name_4 = /storage/ringsets/far_sidelobes/cmb.fits
+
+[Input]
+quality_flag_mask = 6111248
+
+[Output]
+save_tods = true
+tod_file_path = /storage/phisky_tods/
+interpolation_order = 5
+quantiles = 25,50,75
+quantiles_file_name = /storage/quantiles.fits
+map_nside = 64
+output_file_name = /storage/phisky_maps/LFI27M_phisky.fits
+\end{verbatim}
+
+Each parameters is provided in the form \texttt{key = value}, and
+parameters are grouped in sections like \texttt{[Pointings]}, whose
+name is enclosed within square brackets. A few notes:
+\begin{enumerate}
+\item The convolution matrices and the ringsets used for the
+  computation of the convolutions in Eq.~\eqref{eq:phiDDefinition} and
+  Eq.~\eqref{eq:phiSkyDefinition} are listed in two separated sections
+  (\texttt{[Main beam matrices]} and \texttt{[Sidelobe matrices]} for
+  [[phid]], and \texttt{[Main ringsets]} and \texttt{[Side ringsets]}
+  for [[phisky]]). It is not mandatory to use names like
+  \texttt{file\_name\_1}, \texttt{file\_name\_2}, \ldots for the keys:
+  the program will read any key/value entry within this section and
+  assume that each specifies the path to a ringset file.
+\item Pointings and temperature files are expressed by means of a
+  template: the \texttt{\%.4d} characters in the file name are
+  substituted with a four-digit number (zero padded) which goes from
+  \texttt{first\_index} to \texttt{last\_index}. The user can also
+  list all the files explicitly:
+\begin{verbatim}
+[Pointings]
+pointing_file_name0000 = /storage/pointings/LFI27M_0091.sqz
+pointing_file_name0001 = /storage/pointings/LFI27M_0092.sqz
+pointing_file_name0002 = /storage/pointings/LFI27M_0093.sqz
+...
+pointing_file_name1512 = /storage/pointings/LFI27M_1603.sqz
+pointing_file_name1513 = /storage/pointings/LFI27M_1604.sqz
+\end{verbatim}
+  (Similarly for \texttt{[Temperatures]}.)
+\end{enumerate}
+
+Neither [[phid]] nor [[phisky]] can run without a parameter file,
+which must be provided on the command line. Therefore, the first step
+is to verify that the user actually provided a parameter file:
+<<Check program options>>=
+if ParamCount <> 1 then
+begin
+   PrintHelp;
+   Exit;
+end;
+@
+
+The [[PrintHelp]] function is extremely simple and only prints a lame
+one-liner, as it would be useless to carefully describe all the
+parameters accepted in the INI files in a error message to be printed
+on a terminal. Only the ``master'' MPI process is allowed to print the
+help on terminal, so that the user is not going to get $N$ copies of
+the same text on the screen (with $N$ being the number of MPI
+processes).
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure PrintHelp;
+begin
+    if Mpi.CommRank(Mpi.World) = 0 then
+        WriteLn(Format('Usage: %s PARAMETER_FILE', [ProgramName]));
+end;
+@ %def PrintHelp
+
+Once we are sure the user provided the name of a configuration file,
+we parse it using a yet-to-be-defined procedure [[ReadConfiguration]].
+We print it on the screen immediately, so the user can check that
+everything is ok:
+<<Check program options>>=
+ReadConfiguration(ParamStr(1), Configuration);
+if Mpi.CommRank(Mpi.World) = 0 then
+    PrintConfiguration(Configuration);
+@ The two implementations of [[ReadConfiguration]] (one for [[phid]],
+the other for [[phisky]]) are quite long but not too interesting, so
+we defer their presentation to Appendix~\ref{sec:parsingINIFiles}.
+
+The [[Configuration]] variable is not a global variable, as it is
+visibile only within the main program's body. Of course, its type
+changes according to the program:
+<<Variables used in the main loop of [[phid]]>>=
+Configuration : TPhiDConfiguration;
+@ %def Configuration
+<<Variables used in the main loop of [[phisky]]>>=
+Configuration : TPhiSkyConfiguration;
+@ %def Configuration
+
+
+This completes the part of the code which is devoted to the parsing of
+user-options. We move now to the implementation of the data-analysis
+tasks.
+
+\subsection{Raw data processing}
+
+\subsubsection{Loading convolution matrices and ringsets}
+
+The first step in the data processing part is to read the data used
+for the computation. We have two kind of datasets to load here:
+convolution matrices and ringsets (used to compute the convolutions in
+Eq~\ref{eq:phiDDefinition} and Eq.~\ref{eq:phiSkyDefinition}), and
+pointing/temperature files. Convolution matrices and ringsets should
+be read once when the program starts, as they are used intensively
+during the execution. But pointing and temperature files should be
+loaded one by one, as it is a waste of space to keep them all in
+memory (each of them is going to be loaded and used by \emph{one and
+  only one} MPI process).
+
+We aggregate the variables that will hold the data loaded when the
+program starts in two dedicated structures, [[TPhiDInputData]] and
+[[TPhiSkyInputData]]:
+<<Type definitions used by [[phid]]>>=
+TConvMatrixArray = array of TConvolutionMatrix;
+TPhiDInputData = record
+    MbMatrices : TConvMatrixArray;
+    SlMatrices : TConvMatrixArray;
+    SolSysVelEcl : TVector;
+    SatelliteVelocity : TSatelliteVelocities;
+end;
+@ %def TPhiDInputData
+
+<<Type definitions used by [[phisky]]>>=
+TRingsetArray = array of TRingset;
+TPhiSkyInputData = record
+    MbRingsets : TRingsetArray;
+    SlRingsets : TRingsetArray;
+end;
+@ %def TPhiSkyInputData
+
+We need of course a variable in the main program with the appropriate
+type:
+<<Variables used in the main loop of [[phid]]>>=
+InputData : TPhiDInputData;
+@
+<<Variables used in the main loop of [[phisky]]>>=
+InputData : TPhiSkyInputData;
+@
+
+We now provide an implementation of the code that initializes the
+[[InputData]] variables. Such code is called in the main
+program\footnote{Note that this initialization happens in \emph{every}
+  MPI process: thus, if $N$ processes are running, every file needed
+  to initialize [[InputData]] will be read -- probably at the same
+  time -- $N$ times. It might be wiser to change the code so that only
+  one of the processes initializes [[InputData]] and sends it to the
+  others. However, the implementation would be more complex because
+  the predefined MPI functions only allow homogeneous vectors to be
+  transferred among processes, while [[InputData]] is a complex data
+  structure both in [[phid]] and in [[phisky]].} and in the case of
+[[phisky]] is going to take some time (and eat much memory!).
+Therefore, [[phisky]] provides the user with an estimate of the memory
+needed by the ringsets using a new function, [[MemoryUsed]], whose
+implementation is described in Appendix~\ref{sec:LoadingSetsOfRingsets}.
+
+<<Read the ringsets>>=
+with Configuration do
+begin
+    Log('Loading the ringsets');
+    LoadRingsets(MbRingsetFileNames, InterpolationOrder,
+                 InputData.MbRingsets);
+    LoadRingsets(SlRingsetFileNames, InterpolationOrder,
+                 InputData.SlRingsets);
+
+    Log(Format('Ringsets loaded, %s of memory currently used',
+               [MemoryUsed(InputData)]));
+end;
+@
+
+In the case of [[phid]], it is not likely we will end eating much
+memory, so no estimate is provided. But we must load satellite
+velocities as well:
+
+<<Read the $\mmatrix$ matrices and the satellite velocities>>=
+with Configuration do
+begin
+    Log('Loading the convolution matrices');
+
+    LoadConvolutionMatrices(MbMatrixFileNames, InputData.MbMatrices);
+    LoadConvolutionMatrices(SlMatrixFileNames, InputData.SlMatrices);
+
+    Log('Convolution matrices loaded, loading the satellite velocities');
+
+    LoadFromFile(SatelliteVelocityFileName, InputData.SatelliteVelocity);
+
+    Log('Satellite velocities loaded');
+
+    { Set up the velocity of the satellite wrt the Solar System }
+    with InputData.SolSysVelEcl do
+        Healpix.AnglesToVector(DipoleParams.DirTheta, DipoleParams.DirPhi, x, y, z);
+    InputData.SolSysVelEcl :=
+        ScaleVector(InputData.SolSysVelEcl, DipoleParams.SpeedMS);
+
+end;
+@
+
+\subsubsection{Splitting the work among the MPI processes}
+
+As we said in Sect.~\ref{sec:introduction}, our implementation of
+[[phid]] and [[phisky]] is going to use the MPI library, to allow the
+code to run on multiple-core clusters and thus to save the wall-clock
+time needed for the computation. From now on it is important to keep
+in mind that the code we are going to implement shall work on $N$
+different machines at the same time, with $N$ being a number typically
+in the 10--100 range.
+
+In Sect.~\ref{sec:introduction} we defined the kind of job done by
+this program as ``embarassingly parallel''. When the program runs in a
+parallel system, each process can work independently of the others
+(i.e., no need to exchange information with other processes during the
+calculations). We are going to process a number of pointing files
+(each containing pointing information for one operational day of LFI),
+but each of them can be processed separatedly from the others. There
+are two possible approaches to this:
+\begin{enumerate}
+\item If the number of files to process is $M$, we can assign to each
+  of the $N$ MPI processes the analysis of $M/N$ files (assuming that
+  $M > N$). Of course, since $M$ is not necessarily going to be a
+  multiple of $N$, a few MPI processes might need to process one more
+  file than the others.
+\item The \emph{master/slave} approach is surely the most efficient
+  approach, but it is quite complex to implement. Basically, one of
+  the MPI processes acts as a ``master'', which keeps a list of all
+  the work that needs to be done (i.e., all the pointing files that
+  must be processed). Any other MPI process is a ``slave'', which asks
+  the master for new job (a pointing file to process), does it, and
+  then asks the master again. Each time the master receive a request
+  from a slave, checks what is the first job that has not been
+  assigned yet, sends the job description to the slave, and then it
+  marks the job as ``assigned''. When all the jobs have been assigned,
+  the master has completed its task.
+\end{enumerate}
+
+If the size of the collection of pointing files varied significantly,
+the master/slave approach would be the best, as the MPI processes
+lucky enough to get the smallest files would end doing more jobs than
+the other processes. However, in the case of LFI the pointing files
+are roughly all of the same size (this is a consequence of the fact
+that operational days have all roughly the same length, with only a
+few exceptions). Thus, in this version of the program we adopt the
+simplest approach of dividing the set of files into subsets with $\sim
+M/N$ elements: if $i = 0\ldots N - 1$ is the index (``rank'') of a MPI
+process and $f_k$ is the $k$-th pointing file to process, then the
+$i$-th process will analyze the subset of files given by
+\[
+\left\{f_{\lfloor i M / N \rfloor}, \ldots, f_{\lfloor (i + 1) M / N
+    \rfloor - 1}\right\}
+\]
+This calculation is provided by the function [[DivideMpiJobs]] below
+(hint: in Pascal, [[div]] is the integer division):
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure DivideMpiJobs(MpiRank, MpiSize : Integer;
+                        NumOfFiles : Integer;
+                        out FirstIdx, LastIdx : Integer);
+begin
+    FirstIdx := (NumOfFiles * MpiRank) div MpiSize;
+    LastIdx := (NumOfFiles * (MpiRank + 1)) div MpiSize - 1;
+end;
+@ %def DivideMpiJobs
+
+On exit, the [[DivideMpiJobs]] function sets the value of [[FirstIdx]]
+and [[LastIdx]] to the index of the first and last (inclusive) element
+in an array of [[NumOfFiles]] which should be processed by the current
+MPI process. We must therefore define two variables, [[FirstFileIdx]]
+and [[LastFileIdx]], in the main program, as well as an iterator that
+cycles over all the indexes in the range
+[[FirstFileIdx]]\ldots[[LastFileIdx]], and a couple of variables that
+will hold the index of the current MPI process and the number of
+running processes.
+
+<<Variables used by [[phid]] and [[phisky]] in the main loop>>=
+FirstFileIdx, LastFileIdx : Integer;
+MpiRank, MpiSize : Integer;
+Idx : Integer;
+@ %def FirstFileIdx LastFileIdx
+
+The procedure [[DivideMpiJobs]] assumes that the number of files $M$
+is larger than the number of MPI processes $N$ (otherwise the equation
+for [[LastIdx]] might even produce negative numbers). Thus, in the
+main program we check that this condition holds: if it does not, then
+the variable [[MpiSize]] is redefined and the jobs with the highest
+rank will stop working (because they would have nothing to do).
+
+<<Subdivide the pointing files among the MPI processes>>=
+MpiRank := Mpi.CommRank(Mpi.World);
+MpiSize := Mpi.CommSize(Mpi.World);
+if MpiSize > Length(Configuration.PointingFileNames) then
+begin
+    MpiSize := Length(Configuration.PointingFileNames);
+    if MpiRank >= MpiSize then
+    begin
+        Log(Format('Too many MPI processes (%d) and too few ' +
+                   'files (%d): this process will stop',
+                   [MpiSize, Length(Configuration.PointingFileNames)]));
+        Exit;
+    end;
+end;
+
+DivideMpiJobs(MpiRank, MpiSize, Length(Configuration.PointingFileNames),
+              FirstFileIdx, LastFileIdx);
+
+case LastFileIdx - FirstFileIdx + 1 of
+0: Log('No files to load');
+1: Log(Format('This MPI process will analyze pointing file %s',
+              [Configuration.PointingFileNames[FirstFileIdx]]));
+else Log(Format('This MPI process will analyze %d pointing files ' +
+                    '(out of %d): %s … %s',
+                [LastFileIdx - FirstFileIdx + 1,
+                 Length(Configuration.PointingFileNames),
+                 Configuration.PointingFileNames[FirstFileIdx],
+                 Configuration.PointingFileNames[LastFileIdx]]))
+end;
+@
+
+\subsubsection{Numerical calculation of $\phid$ and $\phisky$}
+
+We need two new structures to hold the $\phid$/$\phisky$ TODs. Each
+MPI process will use one variable of these types to hold the TOD for
+the pointing file that is currently processing.
+
+The structure used by [[phid]] contains the following arrays:
+\begin{enumerate}
+\item The time of the observation, $t$ (in [[ObtTimes]]);
+\item The value of the dipole, $D$ (in [[D]]);
+\item The value of $B_s * D$ (in [[BslD]]);
+\item The value of $B_m * D$ (in [[BslD]]);
+\item The estimate for $\phid$ (in [[PhiD]]);
+\item A flag that tells if the value estimated for $\phid$ is reliable
+  or not (in [[Valid]]).
+\end{enumerate}
+All these array have the same length, which is equal to the number of
+samples found in the pointing file being processed.
+
+<<Type definitions used by [[phid]]>>=
+TPhiDTod = record
+    ObtTimes : Array of Int64;
+    D : Array of Double;
+    BslD : Array of Double;
+    BmD : Array of Double;
+    PhiD : Array of Double;
+    Valid : Array of Boolean;
+end;
+@ %def TPhiDTod
+
+In the case of the [[TPhiSkyTod]] structure, the field [[BslTsky]]
+contains the value of $B_s * \Tsky$, while [[BmTsky]] contains $B_m *
+\Tsky$. The [[Valid]] field is [[False]] whenever the denominator in
+Eq.~\ref{eq:phiDDefinition} is zero. The field [[TskyMeas]] contains
+$\Tskymeas$, and it is copied from the temperature file.
+
+<<Type definitions used by [[phisky]]>>=
+TPhiSkyTod = record
+    ObtTimes : Array of Int64;
+    TskyMeas : Array of Double;
+    BslTsky : Array of Double;
+    BmTsky : Array of Double;
+    PhiSky : Array of Double;
+    Valid : Array of Boolean;
+end;
+@ %def TPhiSkyTod
+
+A variable of the corresponding type is declared in the main block:
+
+<<Variables used in the main loop of [[phid]]>>=
+PhiTod : TPhiDTod;
+@ %def PhiTod
+
+<<Variables used in the main loop of [[phisky]]>>=
+PhiTod : TPhiSkyTod;
+@ %def PhiTod
+
+The term [[D]] in the [[TPhiDTod]] variable can be easily computed
+using the convolution matrix for a Dirac's delta:
+
+<<High-level functions for the [[phid]] program>>=
+procedure ComputeD(const SolSysVelEcl : TVector;
+                   const Pointings : TDetectorPointings;
+                   const Vel : TSatelliteVelocities;
+                   var D : TDoubleArray);
+var
+    Idx : Integer;
+
+begin
+    SetLength(D, Length(Pointings.Theta));
+    for Idx := 0 to Length(Pointings.Theta) - 1 do
+    begin
+        with Pointings do
+            D[Idx] := Convolve(DiracDelta, SolSysVelEcl, Vel,
+                               ScetTimes[Idx], Theta[Idx], Phi[Idx], Psi[Idx]);
+    end;
+end;
+@ %def ComputeD
+
+Assuming that a [[TPhiDTod]] variable has had its members [[BslD]]
+and [[BmTd]] already initialized, the procedure [[CalculatePhiD]]
+computes $\phid$ using Eq.~\ref{eq:phiDDefinition}.
+
+<<High-level functions for the [[phid]] program>>=
+procedure CalculatePhiD(var PhiDTod : TPhiDTod);
+var
+    Idx : Integer;
+    BmDDiff : Double;
+
+begin
+    with PhiDTod do
+    begin
+        SetLength(PhiD, Length(BslD));
+        SetLength(Valid, Length(BmD));
+        for Idx := 1 to Length(PhiD) - 1 do
+        begin
+            BmDDiff := BmD[Idx] - BmD[Idx - 1];
+            if BmDDiff <> 0.0 then
+            begin
+                PhiD[Idx] := (BslD[Idx] - BslD[Idx - 1]) / BmDDiff;
+                Valid[Idx] := True;
+            end else
+                Valid[Idx] := False;
+        end;
+    end;
+end;
+@ %def CalculatePhiD
+
+The procedure [[CalculatePhiSky]] has a similar implementation:
+
+<<High-level functions for the [[phisky]] program>>=
+procedure CalculatePhiSky(const Flags : Array of UInt32;
+                          QualityFlagMask : UInt32;
+                          var PhiSkyTod : TPhiSkyTod);
+var
+    Idx : Integer;
+
+begin
+    with PhiSkyTod do
+    begin
+        SetLength(PhiSky, Length(BslTsky));
+        SetLength(Valid, Length(BslTsky));
+        for Idx := 0 to Length(PhiSky) - 1 do
+        begin
+            if (TskyMeas[Idx] <> 0.0) and ((Flags[Idx] and QualityFlagMask) = 0) then
+            begin
+                PhiSky[Idx] := BslTsky[Idx] / TskyMeas[Idx];
+                Valid[Idx] := True;
+            end else
+                Valid[Idx] := False;
+        end;
+    end;
+end;
+@ %def CalculatePhiSky
+
+To use [[CalculatePhiD]] and [[CalculatePhiSky]], we need to wrap
+their call in a function which loads the pointing and temperature
+files (the latter are needed by [[phisky]] only, of course, as they
+are used to get the term $\Tskymeas$ in
+Eq.~\ref{eq:phiSkyDefinition}). This is the purpose of
+[[ProcessPointingFile]] (used by [[phid]]) and [[ProcessFilePair]]
+(used by [[phisky]]), which save the TODs in two [[out]] variables
+([[PhiDTod]] and [[PhiSkyTod]]) and calls a function
+[[ProjectTodOntoMap]]: the purpose of the latter will be explained
+later.
+
+<<High-level functions for the [[phid]] program>>=
+{ Forward declaration }
+procedure SumConvMatricesIntensities(const Matrices : TConvMatrixArray;
+                                     const SolSysVelEcl : TVector;
+                                     const SatVel : TSatelliteVelocities;
+                                     const Pointings : TDetectorPointings;
+                                     var DestVector : TDoubleArray); forward;
+
+procedure ProcessPointingFile(const FileName : String;
+                              const InputData : TPhiDInputData;
+                              out PhiDTod : TPhiDTod;
+                              var BinnedMap : THealpixMap;
+                              var HitMap : THealpixMap);
+var
+    FileHeader : Squeezer.TFileHeader;
+    Pointings : TDetectorPointings;
+
+begin
+    Log(Format('Reading pointing file %s…', [FileName]));
+    ReadDetectorPointings(FileName, FileHeader, Pointings);
+    Log(Format('…pointing file read, %d samples found',
+               [Length(Pointings.ObtTimes)]));
+
+    SetLength(PhiDTod.ObtTimes, Length(Pointings.ObtTimes));
+    Move(Pointings.ObtTimes[0], PhiDTod.ObtTimes[0],
+         Length(Pointings.ObtTimes) * SizeOf(Pointings.ObtTimes[0]));
+
+    Log('Computing the term D…');
+    ComputeD(InputData.SolSysVelEcl, Pointings,
+             InputData.SatelliteVelocity, PhiDTod.D);
+    Log('…term D computed');
+
+    Log(Format('Calculating convolutions using %d+%d (MB/SL) convolution matrices…',
+              [Length(InputData.MbMatrices), Length(InputData.SlMatrices)]));
+    SumConvMatricesIntensities(InputData.MbMatrices, InputData.SolSysVelEcl,
+                               InputData.SatelliteVelocity, Pointings, PhiDTod.BmD);
+    SumConvMatricesIntensities(InputData.SlMatrices, InputData.SolSysVelEcl,
+                               InputData.SatelliteVelocity, Pointings, PhiDTod.BslD);
+    Log('…convolutions calculated');
+
+    Log('Calculating φ_D…');
+    CalculatePhiD(PhiDTod);
+    Log('…φ_D calculated');
+
+    ProjectTodOntoMap(Pointings, PhiDTod.PhiD, PhiDTod.Valid, BinnedMap, HitMap);
+end;
+@ %def ProcessPointingFile
+
+The name [[ProcessFilePair]] refers to the fact that we need to load
+the temperature file as well as the pointing file. Its implementation
+is therefore slightly more complex than [[ProcessPointingFile]]. It
+uses a function, [[SumRingsetIntensities]], which iterates over an
+array of ringsets and produces the sum of their intensities for a set
+of pointings; its implementation is trivial, and we defer its
+implementation to Appendix~\ref{sec:LoadingSetsOfRingsets}.
+
+<<High-level functions for the [[phisky]] program>>=
+{ Forward declaration }
+procedure SumRingsetIntensities(const Ringsets : TRingsetArray;
+                                const Pointings : TDetectorPointings;
+                                var DestVector : TDoubleArray); forward;
+
+procedure ProcessFilePair(const PntFileName, TskyFileName : String;
+                          const InputData : TPhiSkyInputData;
+                          QualityFlagMask : UInt32;
+                          out PhiSkyTod : TPhiSkyTod;
+                          var BinnedMap : THealpixMap;
+                          var HitMap : THealpixMap);
+
+var
+    FileHeader : Squeezer.TFileHeader;
+    Pointings : TDetectorPointings;
+    Temperature : TDifferencedData;
+
+begin
+    Log(Format('Reading pointing file %s…', [PntFileName]));
+    ReadDetectorPointings(PntFileName, FileHeader, Pointings);
+    Log(Format('…pointing file read, %d samples found',
+               [Length(Pointings.ObtTimes)]));
+
+    Log(Format('Reading temperature file %s…', [TskyFileName]));
+    ReadDifferencedData(TskyFileName, FileHeader, Temperature);
+    Log(Format('…temperature file read, %d samples found',
+               [Length(Pointings.ObtTimes)]));
+
+    SetLength(PhiSkyTod.ObtTimes, Length(Pointings.ObtTimes));
+    Move(Pointings.ObtTimes[0], PhiSkyTod.ObtTimes[0],
+         Length(Pointings.ObtTimes) * SizeOf(Pointings.ObtTimes[0]));
+
+    SetLength(PhiSkyTod.TskyMeas, Length(Temperature.SkyLoad));
+    Move(Temperature.SkyLoad[0], PhiSkyTod.TskyMeas[0],
+         Length(Temperature.SkyLoad) * SizeOf(Temperature.SkyLoad[0]));
+
+    Log(Format('Calculating convolutions using %d+%d (MB/SL) ringsets…',
+              [Length(InputData.MbRingsets), Length(InputData.SlRingsets)]));
+    SumRingsetIntensities(InputData.MbRingsets, Pointings, PhiSkyTod.BmTsky);
+    SumRingsetIntensities(InputData.SlRingsets, Pointings, PhiSkyTod.BslTsky);
+    Log('…convolutions calculated');
+
+    Log('Calculating φ_sky…');
+    CalculatePhiSky(Temperature.Flags, QualityFlagMask, PhiSkyTod);
+    Log('…φ_sky calculated');
+
+    ProjectTodOntoMap(Pointings, PhiSkyTod.PhiSky, PhiSkyTod.Valid, BinnedMap, HitMap);
+end;
+@ %def ProcessFilePair
+
+In the main program we iterate through all the pointing/temperature
+filenames that this MPI process must analyze (these are the elements
+in [[Configuration.PointingFileNames]] and
+[[Configuration.TemperatureFileNames]] whose index falls within
+[[FirstFileIdx]]\ldots[[LastFileIdx]]). If the user asked to save the
+raw TODs, we call the procedure [[SavePhiTod]], which we
+will implement in the next section.
+
+\begin{figure}[tbf]
+  \centering
+  \includegraphics[width=\textwidth]{quantile_mem_layout.pdf}
+  \caption{\label{fig:quantileMemLayout} How quantiles for each MPI
+    process are stored in memory.}
+\end{figure}
+
+Let's now concentrate to the way quantiles are stored in memory. Each
+MPI process must analyze a set of files, which is a subset of all the
+files specified in the parameter file [REF XXX]. If the MPI process
+needs to process $M$ files and extract $n$ quantiles from each of
+them, then the most natural data structure in which to keep such
+quantiles is a $n \times M$ bi-dimensional array (matrix). However, in
+order to make things easier when we will implement the code to pass
+such quantiles through MPI processes, we choose to use monodimensional
+arrays that are indexed like a bi-dimensional one (see
+Fig.~\ref{fig:quantileMemLayout}).
+
+We declare two variables that will hold the quantiles: the first one
+keeps the quantiles calculated for the files processed by the current
+MPI process, while the second one will hold all the quantiles (this
+will be used by the root process only):
+
+<<Variables used by [[phid]] and [[phisky]] in the main loop>>=
+QuantileArray, OverallQuantileArray : TDoubleArray;
+@
+
+As we said above, the size of [[QuantileArray]] should be $n \times
+M$, with $n$ the number of quantiles to compute and $M$ the number of
+files processed by the current MPI process.
+<<Initialize the structures used to compress the TODs>>=
+SetLength(QuantileArray, (LastFileIdx - FirstFileIdx + 1) * Length(Configuration.Quantiles));
+@
+
+We are now ready to implement the main loop of the application:
+
+<<Apply Eq.~\eqref{eq:phiDDefinition} to the data in each pointing/temperature file>>=
+for CurFileIdx := FirstFileIdx to LastFileIdx do
+begin
+    with Configuration do
+    begin
+        try
+            ProcessPointingFile(PointingFileNames[CurFileIdx],
+                                InputData, PhiTod, BinnedMap, HitMap);
+
+            AppendQuantiles(PhiTod.PhiD, PhiTod.Valid, Configuration.Quantiles,
+                            QuantileArray, CurFileIdx - FirstFileIdx);
+
+            if Configuration.SaveTods then
+                SavePhiTod(ConcatPaths([TodFilePath,
+                    ChangeFileExt(ExtractFileName(PointingFileNames[CurFileIdx]),
+                                  '-phid.fits')]),
+                              PhiTod);
+        except
+            on E : Exception do
+                Log(Format('Unable to process file "%s" (%s), skipping…',
+                           [PointingFileNames[CurFileIdx],
+                            E.Message]));
+        end;
+    end;
+end;
+@
+
+The program [[phisky]] uses a quite similar loop. Of course, in this
+case we need to consider temperature files as well.
+<<Apply Eq.~\eqref{eq:phiSkyDefinition} to the data in each pointing/temperature file>>=
+for CurFileIdx := FirstFileIdx to LastFileIdx do
+begin
+    with Configuration do
+    begin
+        try
+            ProcessFilePair(PointingFileNames[CurFileIdx],
+                            TemperatureFileNames[CurFileIdx],
+                            InputData, Configuration.QualityFlagMask,
+                            PhiTod, BinnedMap, HitMap);
+
+            AppendQuantiles(PhiTod.PhiSky, PhiTod.Valid, Configuration.Quantiles,
+                            QuantileArray, CurFileIdx - FirstFileIdx);
+
+            if Configuration.SaveTods then
+                SavePhiTod(ConcatPaths([TodFilePath,
+                    ChangeFileExt(ExtractFileName(TemperatureFileNames[CurFileIdx]),
+                                  '-phisky.fits')]),
+                              PhiTod);
+        except
+            on E : Exception do
+                Log(Format('Unable to process files "%s" and "%s" (%s), skipping…',
+                           [PointingFileNames[CurFileIdx],
+                            TemperatureFileNames[CurFileIdx],
+                            E.Message]));
+        end;
+    end;
+end;
+@
+
+The variable [[CurFileIdx]] used in the two [[for]] loops above is
+declared within the scope of the main block:
+
+<<Variables used by [[phid]] and [[phisky]] in the main loop>>=
+CurFileIdx : Integer;
+@ %def CurFileName
+
+\subsubsection{Saving the $\phid$ and $\phisky$ TODs}
+
+The two programs save the information in the [[TPhiDTod]] and
+[[TPhiSkyTod]] variable into a FITS file. In both cases, the file
+contains just one binary table HDU and is created by the procedure
+[[SavePhiTod]], whose implementation of course differ between [[phid]]
+and [[phisky]].
+
+<<High-level functions for the [[phid]] program>>=
+procedure SavePhiTod(const FileName : String;
+                     const PhiDTod : TPhiDTod);
+const
+    FileColumns : Array[1..5] of Cfitsio.TColumn =
+        ((Name: 'OBTTIME'; Count: 1; DataType: FitsTypeDouble;  UnitStr: ''),
+         (Name: 'BSLD';    Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'BMD';     Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'PHID';    Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'VALID';   Count: 1; DataType: FitsTypeLogical; UnitStr: ''));
+
+var
+    F : TFitsFile;
+
+begin
+    Log(Format('Saving %d values of φ_D into file %s…',
+               [Length(PhiDTod.ObtTimes), FileName]));
+    try
+        EnsurePathExists(FileName);
+        F := Cfitsio.CreateFile(FileName, Overwrite);
+        try
+            Cfitsio.CreateTable(F, BinaryTable, 0, FileColumns, 'PHID');
+            Cfitsio.WriteComment(F, 'File created by the phid program');
+            Cfitsio.WriteComment(F, 'Phid was compiled on ' +
+                                        {$i %date} + ' ' + {$i %time});
+
+            Cfitsio.WriteColumn(F, 1, 1, 1, PhiDTod.ObtTimes);
+            Cfitsio.WriteColumn(F, 2, 1, 1, PhiDTod.BslD);
+            Cfitsio.WriteColumn(F, 3, 1, 1, PhiDTod.BmD);
+            Cfitsio.WriteColumn(F, 4, 1, 1, PhiDTod.PhiD);
+            Cfitsio.WriteColumn(F, 5, 1, 1, PhiDTod.Valid);
+
+            Log(Format('…done, file %s has been saved', [FileName]));
+        finally
+            Cfitsio.CloseFile(F);
+        end;
+    except
+        on E : EFitsError do Log(Format('Unable to write file %s: %s',
+                                        [FileName, E.message]));
+    end;
+end;
+@ %def SavePhiTod
+The function [[EnsurePathExists]] is implemented in
+Appendix~\ref{sec:FileUtilities}, and it creates the path needed to
+save the file specified in its argument if needed (e.g., a call to
+[[EnsurePathExists('/path/test.fits')]] will create the directory
+\texttt{/path} if it does not exist).
+
+<<High-level functions for the [[phisky]] program>>=
+procedure SavePhiTod(const FileName : String;
+                     const PhiSkyTod : TPhiSkyTod);
+const
+    FileColumns : Array[1..6] of Cfitsio.TColumn =
+        ((Name: 'OBTTIME'; Count: 1; DataType: FitsTypeDouble;  UnitStr: ''),
+         (Name: 'SLCONV';  Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'MBCONV';  Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'TSKY';    Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'PHISKY';  Count: 1; DataType: FitsTypeFloat;   UnitStr: 'K_CMB'),
+         (Name: 'VALID';   Count: 1; DataType: FitsTypeLogical; UnitStr: ''));
+
+var
+    F : TFitsFile;
+
+begin
+    Log(Format('Saving %d values of φ_sky into file %s',
+               [Length(PhiSkyTod.ObtTimes), FileName]));
+    try
+        EnsurePathExists(FileName);
+        F := Cfitsio.CreateFile(FileName, Overwrite);
+        try
+            Cfitsio.CreateTable(F, BinaryTable, 0, FileColumns, 'PHISKY');
+            Cfitsio.WriteComment(F, 'File created by the phisky program');
+            Cfitsio.WriteComment(F, 'Phisky was compiled on ' +
+                                        {$i %date} + ' ' + {$i %time});
+            Cfitsio.WriteColumn(F, 1, 1, 1, PhiSkyTod.ObtTimes);
+            Cfitsio.WriteColumn(F, 2, 1, 1, PhiSkyTod.BslTsky);
+            Cfitsio.WriteColumn(F, 3, 1, 1, PhiSkyTod.BmTsky);
+            Cfitsio.WriteColumn(F, 4, 1, 1, PhiSkyTod.TskyMeas);
+            Cfitsio.WriteColumn(F, 5, 1, 1, PhiSkyTod.PhiSky);
+            Cfitsio.WriteColumn(F, 6, 1, 1, PhiSkyTod.Valid);
+        finally
+            Cfitsio.CloseFile(F);
+        end;
+    except
+        on E : EFitsError do Log(Format('Unable to write file %s: %s',
+                                        [FileName, E.message]));
+    end;
+end;
+@
+
+\subsection{Compressing and saving the results}
+\label{sec:dimensionalityreduction}
+
+The $\phisky$ TODs generated by the program require much disk space
+(of the same order of magnitude as the pointings, which means roughly
+20\,GB/radiometer if saved in a compressed format) Therefore, the
+code reduces the dimensionality of the TODs in two ways:
+\begin{itemize}
+\item Statistical quantities are computed for each OD, and only these
+  are saved. This is still a TOD, but instead of having one row per
+  sample, we have one row per OD.
+\item The values of $\phisky$ are projected (binned) on a Healpix
+  map.
+\end{itemize}
+
+The [[TPercentageArray]] type used in the definition of [[Quantiles]]
+is an open array of integer numbers ([[TPercentage]]) representing a
+percentage. We use this custom type instead of a [[Integer]] because
+in this way its range is automatically checked by the compiler:
+
+<<Basic type definitions (shared between [[phisky]] and [[phid]])>>=
+TPercentage = 0..100;
+TPercentageArray = array of TPercentage; { Open array }
+@ %def TPercentage TPercentageArray
+
+We add a few useful new types as well:
+
+<<Basic type definitions (shared between [[phisky]] and [[phid]])>>=
+TStringArray = array of String;  { Open array }
+TDoubleArray = array of Double;  { Open array }
+TBoolArray   = array of Boolean; { Open array }
+@ %def TStringArray
+
+<<Compress the $\phisky$ TODs and produce reduced TODs>>=
+{ No code here }
+@
+
+\subsubsection{Producing statistics for each OD}
+
+To compute the quantiles, we need a sorting procedure. Unfortunately,
+Free Pascal does not provide a general-purpose sorting routine, so we
+provide here our own implementation of the ``quick sort'' algorithm:
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure InPlaceQuickSort(var A : Array of Double; FirstIdx, LastIdx : Integer);
+Var
+    i, j : LongInt;
+    tmp, pivot : Double;
+
+Begin
+    i := FirstIdx;
+    j := LastIdx;
+    pivot := A[(FirstIdx + LastIdx) div 2];
+    repeat
+        while pivot > A[i] do Inc(i);
+        While pivot < A[j] do Dec(j);
+        if i <= j then begin
+            tmp := A[i];
+            A[i] := A[j];
+            A[j] := tmp;
+            Inc(i);
+            Dec(j);
+        end;
+    until i > j;
+    if FirstIdx < j then InPlaceQuickSort(A, FirstIdx, j);
+    if i < LastIdx then InPlaceQuickSort(A, i, LastIdx);
+End;
+@ %def InPlaceQuickSort
+
+To save memory, the [[InPlaceQuickSort]] (as its name suggests)
+performs an in-place sorting, so that at the end of the call the
+original ordering of the double array [[A]] is lost.
+
+Before applying [[InPlaceQuickSort]], we need to filter out those
+elements of the $\phisky$ array that contain invalid values.
+Therefore, our implementation of the [[AppendQuantiles]] function has
+the following structure:
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure AppendQuantiles(const A : TDoubleArray;
+                          const Valid : TBoolArray;
+                          const Quantiles : TPercentageArray;
+                          var QuantileArray : TDoubleArray;
+                          ChunkIdx : Integer);
+var
+    ValidValues : TDoubleArray;
+    Idx, ValidIdx, QuantIdx : Integer;
+    ValuesStr : String;
+begin
+    Assert(Length(A) = Length(Valid));
+    Log(Format('Computing %d quantiles out of an array of %d elements…',
+               [Length(Quantiles), Length(A)]));
+    <<Pick the valid values from [[A]] and store them into [[ValidValues]]>>
+    <<Sort [[ValidValues]] and compute the quantiles from it>>
+    Log(Format('…the quantiles are %s.', [ValuesStr]));
+end;
+@ %def AppendQuantiles
+
+The purpose of the variable [[ValidValues]] is to hold a subset of the
+[[A]] array which corresponds to those values whose twin element in
+[[Valid]] (an array of Boolean values) is [[True]]:
+
+<<Pick the valid values from [[A]] and store them into [[ValidValues]]>>=
+SetLength(ValidValues, Length(A));
+ValidIdx := Low(ValidValues);
+for Idx := Low(A) to High(A) do
+begin
+    if Valid[Idx] then
+    begin
+        ValidValues[ValidIdx] := A[Idx];
+        Inc(ValidIdx);
+    end;
+end;
+if ValidIdx = Low(ValidValues) then
+begin
+    Log('…no valid values found for this OD, skipping the computation of quantiles');
+    Exit;
+end;
+
+SetLength(ValidValues, ValidIdx);  { Truncate the tail of ValidValues }
+Log(Format('…%d valid values found…', [Length(ValidValues)]));
+@
+
+Once [[ValidValues]] is initialized, computing the quantiles is a
+matter of picking the right indexes in the array. We do not check for
+those cases where the quantile falls in the middle between two values
+(the [[div]] operation is an integer division and throws away any
+remainder), because we feel that the loss of precision due to this
+choice is negligible but makes the code considerably simpler.
+
+<<Sort [[ValidValues]] and compute the quantiles from it>>=
+                InPlaceQuickSort(ValidValues, Low(ValidValues), High(ValidValues));
+Log(Format('…values have been sorted, their range is [%.3e, %.3e]…',
+           [ValidValues[Low(ValidValues)], ValidValues[High(ValidValues)]]));
+Idx := ChunkIdx * Length(Quantiles);
+ValuesStr := '';
+for QuantIdx := Low(Quantiles) to High(Quantiles) do
+begin
+    QuantileArray[Idx + QuantIdx] :=
+        ValidValues[(Quantiles[QuantIdx] * Length(ValidValues)) div 100];
+    if ValuesStr <> '' then ValuesStr := ValuesStr + ', ';
+    ValuesStr := ValuesStr + Format('%.3e (%d%%)',
+                                    [QuantileArray[Idx + QuantIdx], Quantiles[QuantIdx]]);
+end;
+@
+
+
+\subsubsection{Projecting $\phid$ and $\phisky$ on a Healpix map}
+
+Another way to condensate the amount of information enclosed in a set
+of $\phid$/$\phisky$ TODs is to project their value on a map. Both
+[[phid]] and [[phisky]] take advantage of a set of a Free Pascal
+implementation of the Healpix pixelisation scheme to produce a FITS
+file containing the binned map of $\phid$ and $\phisky$ values.
+
+The two programs produce the maps via the following steps:
+\begin{enumerate}
+\item Each time a pointing file is processed and the $\phid$/$\phisky$
+  TOD has been calculated, it is immediately projected onto a pair of
+  ``local'' maps. The first map keeps track of the sum of the
+  $\phid$/$\phisky$ values that have ``hit'' that pixel, while the
+  second one keeps track of the number of hits per pixel. These maps
+  are qualified as ``local'', as each MPI process keeps its own pair
+  of maps.
+\item When all the pointing files have been processed by all the MPI
+  processes, a ``reduce'' operation is performed by the root process
+  (with rank \#0), and all the binned maps and hit maps are summed
+  together.
+\item Dividing each pixel of the binned map by the corresponding value
+  in the hit map produces a map of $\phid$/$\phisky$ values.
+\end{enumerate}
+
+Each process has two pairs of binned/hit maps: the first one is
+actually used by each process ([[BinnedMap]] and [[HitMap]]), while
+the second pair is only used by the root process to collect the result
+of all the maps.
+
+<<Variables used by [[phid]] and [[phisky]] in the main loop>>=
+BinnedMap, HitMap : THealpixMap;
+OverallBinnedMap, OverallHitMap : THealpixMap;
+@
+
+These variables are initialized before the loop over the pointing
+files starts. We initialize [[OverallBinnedMap]] and [[OverallHitMap]]
+in every MPI process, even if only the root process will actually use
+it, because in this way we turn off a few warnings that might be
+issued by the Free Pascal compiler:
+<<Initialize the structures used to compress the TODs>>=
+InitMap(Configuration.Nside, Ring, BinnedMap);
+InitMap(Configuration.Nside, Ring, HitMap);
+
+InitMap(Configuration.Nside, Ring, OverallBinnedMap);
+InitMap(Configuration.Nside, Ring, OverallHitMap);
+@
+
+The function that is used to construct the binned and hit maps is
+[[ProjectTodOntoMap]]. It assumes that the [[NSIDE]] value used by
+[[BinnedMap]] and [[HitMap]] is the same.
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure ProjectTodOntoMap(const Pointings : TDetectorPointings;
+                            const Tod : TDoubleArray;
+                            const Valid : TBoolArray;
+                            var BinnedMap : THealpixMap;
+                            var HitMap : THealpixMap);
+var
+    Idx : Integer;
+    PixelIdx : Cardinal;
+
+begin
+    Log(Format('Projecting %d samples into a NSIDE=%d map…',
+               [Length(Tod), BinnedMap.Resolution.Nside]));
+    for Idx := Low(Tod) to High(Tod) do
+    begin
+        if Valid[Idx] then
+        begin
+            PixelIdx := AnglesToPix(BinnedMap, Pointings.Theta[Idx], Pointings.Phi[Idx]);
+            BinnedMap.Pixels[PixelIdx] := BinnedMap.Pixels[PixelIdx] + Tod[Idx];
+            HitMap.Pixels[PixelIdx] := HitMap.Pixels[PixelIdx] + 1.0;
+        end;
+    end;
+    Log('…projection completed.');
+end;
+@ %def ProjectTodOntoMap
+
+\subsubsection{Saving the reduced TODs and the maps}
+
+\begin{figure}[tbf]
+  \centering
+  \includegraphics[width=\textwidth]{quantile_processing.pdf}
+  \caption{\label{fig:gatherQuantiles} How quantiles are gathered
+    together by the root MPI process. In this simple example we
+    consider a run where a total of 11 files must be processed by 3
+    MPI processes. Each MPI process computes its quantiles by calling
+    \texttt{AppendQuantiles} iteratively. At the end of the process,
+    all the MPI processes but the first send their results to the
+    first process (the ``root'') by means of the procedure
+    \texttt{GatherQuantiles}.}
+\end{figure}
+
+So far, the quantiles have been calculated by each MPI process for its
+own files. It is time to gather them together and produce just one
+file with all the quantiles (one row per file). This process is done
+by the procedure [[GatherQuantiles]]. Its role with respect to
+[[AppendQuantiles]] is sketched in Fig.~\ref{fig:gatherQuantiles}. The
+implementation of [[GatherQuantiles]] relies on the MPI functions
+[[Gather]] and [[Gatherv]].
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure GatherQuantiles(const LocalQuantiles : Array of Double;
+                          out OverallQuantiles : TDoubleArray);
+var
+    Idx : Integer;
+    BufLengths : Array of Integer;
+    Displacements : Array of Integer;
+    LocalBufLength : Array[1..1] of Integer;
+
+begin
+    { Retrieve the number of quantiles computed by each MPI process }
+    SetLength(BufLengths, Mpi.CommSize(Mpi.World));
+    LocalBufLength[1] := Length(LocalQuantiles);
+    Mpi.Gather(LocalBufLength, BufLengths, 0, Mpi.World);
+
+    { Set up the array of displacements so that no holes will be left
+      in OverallQuantiles }
+    SetLength(Displacements, Length(BufLengths));
+    Displacements[0] := 0;
+    for Idx := Low(BufLengths) to High(BufLengths) - 1 do
+        Displacements[Idx + 1] := Displacements[Idx] + BufLengths[Idx];
+
+    { Gather the quantiles from each MPI process to the root process }
+    SetLength(OverallQuantiles,
+              Displacements[High(Displacements)] + BufLengths[High(BufLengths)]);
+    Mpi.Gatherv(LocalQuantiles, OverallQuantiles, BufLengths,
+                Displacements, 0, Mpi.World);
+end;
+@ %def GatherQuantiles
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure SaveQuantileTOD(const FileName : String;
+                          const Quantiles : TPercentageArray;
+                          const QuantileArray : TDoubleArray);
+const
+    PercentTableDef : Array[1..1] of Cfitsio.TColumn =
+        ((Name: 'PERCENT'; Count: 1; DataType: FitsTypeShort; UnitStr: 'Percentage'));
+
+var
+    QuantileTableDef : Array of Cfitsio.TColumn;
+    QuantIdx, Idx : Integer;
+    F : TFitsFile;
+    CurQuantiles : TDoubleArray;
+
+begin
+    SetLength(QuantileTableDef, Length(Quantiles));
+    for QuantIdx := Low(QuantileTableDef) to High(QuantileTableDef) do
+    begin
+        with QuantileTableDef[QuantIdx] do
+        begin
+            Name := Format('Q%.3d', [Quantiles[QuantIdx]]);
+            Count := 1;
+            DataType := FitsTypeFloat;
+            UnitStr := '';
+        end;
+    end;
+
+    try
+        Log(Format('Saving quantiles into FITS file "%s"…', [FileName]));
+        F := Cfitsio.CreateFile(FileName, Overwrite);
+        try
+            CreateTable(F, BinaryTable, 0, PercentTableDef, 'PERCENTAGES');
+            WriteColumn(F, 1, 1, 1, Quantiles);
+
+            CreateTable(F, BinaryTable, 0, QuantileTableDef, 'QUANTILES');
+            SetLength(CurQuantiles, Length(QuantileArray) div Length(Quantiles));
+            for QuantIdx := 0 to Length(Quantiles) - 1 do
+            begin
+                for Idx := 0 to Length(CurQuantiles) - 1 do
+                    CurQuantiles[Idx] := QuantileArray[Idx * Length(Quantiles) + QuantIdx];
+                WriteColumn(F, 1 + QuantIdx, 1, 1, CurQuantiles);
+            end;
+        finally
+            Cfitsio.CloseFile(F);
+        end;
+    except
+        on E : Exception do Log(Format('Unable to write file "%s": %s',
+                                       [FileName, E.Message]));
+    end;
+    Log(Format('…file "%s" saved.', [FileName]));
+end;
+@ %def
+
+<<Compress the TODs and produce reduced TODs>>=
+GatherQuantiles(QuantileArray, OverallQuantileArray);
+if MpiRank = 0 then
+begin
+    EnsurePathExists(Configuration.QuantileTableFileName);
+    SaveQuantileTOD(Configuration.QuantileTableFileName,
+                    Configuration.Quantiles, OverallQuantileArray);
+end;
+@
+
+To produce the Healpix map containing the binned values of $\phid$ and
+$\phisky$, we need to collect all the $N$ maps produced by each of the
+$N$ MPI processes running. It is just a matter of calling the MPI
+\texttt{reduce} function on the pixels of the local binned and hit
+maps, and then normalize the binned map using the hit map:
+
+<<Compress the TODs and produce reduced TODs>>=
+Log(Format('Reducing %d binned values…', [Length(BinnedMap.Pixels)]));
+Mpi.Reduce(BinnedMap.Pixels, OverallBinnedMap.Pixels, MPI_SUM, 0, Mpi.World);
+Log(Format('Reducing %d hit count pixels…', [Length(BinnedMap.Pixels)]));
+Mpi.Reduce(HitMap.Pixels, OverallHitMap.Pixels, MPI_SUM, 0, Mpi.World);
+
+if MpiRank = 0 then
+begin
+    for Idx := 0 to Length(BinnedMap.Pixels) - 1 do
+    begin
+        if OverallHitMap.Pixels[Idx] > 0 then
+            OverallBinnedMap.Pixels[Idx] :=
+                OverallBinnedMap.Pixels[Idx] / OverallHitMap.Pixels[Idx]
+        else
+            OverallBinnedMap.Pixels[Idx] := Healpix.Unseen;
+    end;
+end;
+@
+
+The map is now ready to be saved. We use the following format:
+<<General-purpose constants>>=
+    MapColumns : Array[1..2] of Cfitsio.TColumn =
+        ((Name: 'AVGPHI'; Count: 1; DataType: FitsTypeFloat; UnitStr: ''),
+         (Name: 'HITS';   Count: 1; DataType: FitsTypeLong;  UnitStr: ''));
+@ %def MapColumns
+
+Now to the code for saving the map. The [[Healpix]] unit already
+provides a [[WriteHealpixMap]] procedure. However, this can be used
+only for saving \emph{one} column, while here we're interested in
+squeezing two columns in the same table. Fortunately, we do not have
+to write low-level code, as the function [[WriteHealpixKeywords]]
+already takes care of the burden of writing all the keywords needed by
+the Healpix standard (e.g., \texttt{NSIDE}) in the current HDU:
+<<Save the reduced TODs>>=
+if MpiRank = 0 then
+begin
+    Log(Format('Writing binned map in %s…', [Configuration.OutputMapFileName]));
+    try
+        EnsurePathExists(Configuration.OutputMapFileName);
+        FitsFile := Cfitsio.CreateFile(Configuration.OutputMapFileName, Overwrite);
+        try
+            Cfitsio.CreateTable(FitsFile, BinaryTable, 0, MapColumns, 'PHIMAP');
+            Healpix.WriteHealpixKeywords(FitsFile, OverallBinnedMap);
+            Cfitsio.WriteColumn(FitsFile, 1, 1, 1, OverallBinnedMap.Pixels);
+            Cfitsio.WriteColumn(FitsFile, 2, 1, 1, OverallHitMap.Pixels);
+        finally
+            Cfitsio.CloseFile(FitsFile);
+        end;
+        Log('…done, map has been written successfully');
+    except
+        on E : Exception do Log('…error, unable to write the map: ' + E.Message);
+    end;
+end;
+@
+
+The variable [[FitsFile]] is used both by [[phid]] and [[phisky]], so
+we declare it in the common section of the \texttt{var} block:
+<<Variables used by [[phid]] and [[phisky]] in the main loop>>=
+FitsFile : TFitsFile;
+@
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\appendix
+
+\section{Logging support}
+\label{sec:Logging}
+
+<<Basic functions>>=
+procedure Log(const Message : String);
+var
+    MpiRank : Integer;
+
+begin
+    MpiRank := Mpi.CommRank(Mpi.World);
+    WriteLn(
+                Format('[%s #%d] %s',
+                       [FormatDateTime('YYYY/MM/DD tt', Now),
+                        MpiRank,
+                        Message]));
+end;
+@ %def Log
+
+\section{File utilities}
+\label{sec:FileUtilities}
+
+A very handy function to have when the programs need to save a file is
+[[EnsurePathExists]]. It creates any missing directory in the path of
+its argument, which can either be a file name or a path itself.
+
+<<Basic functions>>=
+procedure EnsurePathExists(const FileName : String);
+var
+    Path : String;
+
+begin
+    Path := ExtractFilePath(ExpandFileName(FileName));
+    if not ForceDirectories(Path) then
+        raise Exception.CreateFmt('Unable to create the path "%s" ' +
+                                  '(needed to save file "%s")',
+                                  [Path, FileName]);
+end;
+@ %def EnsurePathExists
+
+\section{Reading INI files}
+\ref{sec:parsingINIFiles}
+
+To implement the procedure [[ReadConfiguration]], we must have several
+pieces of code at hand first. Free Pascal's large standard library
+provides the [[TIniFile]]
+class\footnote{\url{http://www.freepascal.org/docs-html/fcl/inifiles/tinifile.html}.},
+which is a good starting point. But we also need some other low-level
+functions. First, let's implement the procedure
+[[GetAllValuesFromSection]], which will be used to retrieve the list
+of ringsets from the sections \texttt{[Main ringsets]} and
+\texttt{[Side ringsets]}. There is no method in [[TIniFile]] to
+retrieve a list of values, so we use [[TIniFile.ReadSection]] to read
+all the \emph{keys}, and then cycle over them to save its value into
+[[ValueList]].
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure GetAllValuesFromSection(IniFile : TIniFile;
+                                  SectionName : String;
+                                  var ValueList : TStringArray);
+var
+    KeyList  : TStringList;
+    Idx      : Integer;
+
+begin
+    KeyList := TStringList.Create;
+    try
+        IniFile.ReadSection(SectionName, KeyList);
+        SetLength(ValueList, KeyList.Count);
+        for Idx := 0 to KeyList.Count - 1 do
+            ValueList[Idx] := (IniFile.ReadString(SectionName,
+                                                  KeyList[Idx], ''));
+    finally
+        KeyList.Free;
+    end;
+end;
+@ %def GetAllValuesFromSection
+
+Parsing the list of pointing/temperature files is trickier, as in this
+case the user might either list all the file names (in this case we
+rely on [[GetAllValuesFromSection]]) or use the shorthand provided by
+[[first_index]]/[[last_index]].
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure GetSequenceOfFiles(IniFile : TIniFile;
+                             const SectName : String;
+                             var FileNames : TStringArray);
+var
+    FirstIdx, LastIdx, Idx : Integer;
+    Template : String;
+
+begin
+    if IniFile.ValueExists(SectName, 'first_index') and
+       IniFile.ValueExists(SectName, 'last_index') and
+       IniFile.ValueExists(SectName, 'template') then
+    begin
+        FirstIdx := IniFile.ReadInteger(SectName, 'first_index', 0);
+        LastIdx := IniFile.ReadInteger(SectName, 'last_index', 0);
+        Template := IniFile.ReadString(SectName, 'template', '');
+
+        SetLength(FileNames, LastIdx - FirstIdx + 1);
+        for Idx := FirstIdx to LastIdx do
+            FileNames[Idx - FirstIdx] := Format(Template, [Idx]);
+    end else
+        GetAllValuesFromSection(IniFile, SectName, FileNames);
+end;
+@ %def GetSequenceOfFiles
+
+Another piece of code we need is a procedure which parses the
+comma-separated list of percentages associated to the [[quantiles]]
+key (under the \texttt{[Output]} section).
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure GetPercentages(const InputStr : String;
+                         out Percentages : TPercentageArray);
+var
+    PercStrList : TStringList;
+    Code : Word;
+    Idx : Integer;
+
+begin
+    PercStrList := TStringList.Create;
+    try
+        ExtractStrings([','], [' ', #9], PChar(InputStr), PercStrList);
+        SetLength(Percentages, PercStrList.Count);
+        for Idx := 0 to PercStrList.Count - 1 do
+        begin
+            Val(PercStrList[Idx], Percentages[Idx], Code);
+            if Code <> 0 then
+                raise ERangeError(Format('"%s" is not a percentage',
+                                         [PercStrList[Idx]]));
+        end;
+    finally
+        PercStrList.Free;
+    end;
+end;
+@ %def GetPercentages
+
+Now we are ready to implement the function [[ReadConfiguration]] for
+[[phid]]. If the parameters of the solar CMB dipole are not provided,
+then the Planck 2014 parameters will be used.
+
+<<High-level functions for the [[phid]] program>>=
+procedure ReadConfiguration(const FileName : String;
+                            out Configuration : TPhiDConfiguration);
+var
+    IniFile : TIniFile;
+    ListOfPercentages : String;
+begin
+    IniFile := TIniFile.Create(FileName);
+    try
+        with Configuration do
+        begin
+            GetAllValuesFromSection(IniFile, 'Main beam matrices', MbMatrixFileNames);
+            GetAllValuesFromSection(IniFile, 'Sidelobe matrices', SlMatrixFileNames);
+
+            GetSequenceOfFiles(IniFile, 'Pointings', PointingFileNames);
+
+            SatelliteVelocityFileName :=
+                IniFile.ReadString('Input', 'satellite_velocity_file', '');
+            DipoleParams.DirTheta :=
+                IniFile.ReadFloat('Input', 'dipole_dir_theta_ecl', 1.7656131194951572);
+            DipoleParams.DirPhi :=
+                IniFile.ReadFloat('Input', 'dipole_dir_phi_ecl', 2.9958896005735780);
+            DipoleParams.SpeedMS :=
+                IniFile.ReadFloat('Input', 'dipole_speed_m_s', 370082.2332);
+
+            ListOfPercentages :=
+                IniFile.ReadString('Output', 'quantiles', '25,50,75');
+            GetPercentages(ListOfPercentages, Quantiles);
+            QuantileTableFileName := IniFile.ReadString('Output', 'quantiles_file_name', '');
+            Nside := IniFile.ReadInteger('Output', 'map_nside', 64);
+            if not Healpix.IsNsideValid(Nside) then
+                raise Exception.CreateFmt('Invalid NSIDE value (%d)',
+                                          [Nside]);
+
+            OutputMapFileName :=
+                IniFile.ReadString('Output', 'output_file_name', 'phi_d.fits');
+
+            SaveTods := ReadBoolean(IniFile, 'Output', 'save_tods', False);
+            if SaveTods then
+                TodFilePath :=
+                    IniFile.ReadString('Output', 'tod_file_path', './');
+        end;
+    finally
+        IniFile.Free;
+    end;
+end;
+@ %def ReadConfiguration
+
+And here follows the same procedure for [[phisky]]:
+
+<<High-level functions for the [[phisky]] program>>=
+procedure ReadConfiguration(const FileName : String;
+                            out Configuration : TPhiSkyConfiguration);
+var
+    IniFile : TIniFile;
+    ListOfPercentages : String;
+begin
+    IniFile := TIniFile.Create(FileName);
+    try
+        with Configuration do
+        begin
+            GetAllValuesFromSection(IniFile, 'Main ringsets', MbRingsetFileNames);
+            GetAllValuesFromSection(IniFile, 'Side ringsets', SlRingsetFileNames);
+
+            GetSequenceOfFiles(IniFile, 'Pointings', PointingFileNames);
+            GetSequenceOfFiles(IniFile, 'Temperatures', TemperatureFileNames);
+            if Length(PointingFileNames) <> Length(TemperatureFileNames) then
+                raise Exception.CreateFmt('# of pointing/temperature files differ (%d/%d)',
+                                          [Length(PointingFileNames),
+                                           Length(TemperatureFileNames)]);
+
+            QualityFlagMask := IniFile.ReadInteger('Input', 'quality_flag_mask', 6111248);
+
+            InterpolationOrder :=
+                IniFile.ReadInteger('Output', 'interpolation_order', 5);
+            ListOfPercentages :=
+                IniFile.ReadString('Output', 'quantiles', '25,50,75');
+            GetPercentages(ListOfPercentages, Quantiles);
+            QuantileTableFileName := IniFile.ReadString('Output', 'quantiles_file_name', '');
+            Nside := IniFile.ReadInteger('Output', 'map_nside', 64);
+            if not Healpix.IsNsideValid(Nside) then
+                raise Exception.CreateFmt('Invalid NSIDE value (%d)',
+                                          [Nside]);
+
+            OutputMapFileName :=
+                IniFile.ReadString('Output', 'output_file_name', 'phi_sky.fits');
+
+            SaveTods := ReadBoolean(IniFile, 'Output', 'save_tods', False);
+            if SaveTods then
+                TodFilePath :=
+                    IniFile.ReadString('Output', 'tod_file_path', './');
+        end;
+    finally
+        IniFile.Free;
+    end;
+end;
+@ %def ReadConfiguration
+
+To parse booleans, [[TIniFile]] provides the [[ReadBool]] method,
+which is however quite limited (it only accepts [[0]], which stands
+for [[false]], and [[1]]). So we provide a friendlier alternative in
+the [[ReadBoolean]] function, which we used above to parse the value
+of the key [[save_tods]] (in the \texttt{[Output]} section):
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+function ReadBoolean(const IniFile : TIniFile;
+                     const SectName : String;
+                     const KeyName : String;
+                     DefaultValue : Boolean) : Boolean;
+var
+    DefaultValStr : String;
+    Value : String;
+
+begin
+    if DefaultValue then DefaultValStr := 'true' else DefaultValStr := 'false';
+
+    Value := UpperCase(IniFile.ReadString(SectName, KeyName,
+                                          DefaultValStr));
+    if (Value = 'TRUE') or (Value = 'YES') or (Value = 'ON') then
+        Exit(True)
+    else if (Value = 'FALSE') or (Value = 'NO') or (Value = 'OFF') then
+        Exit(False);
+
+    { Unable to understand what the user wants, so stick with the default }
+    Exit(DefaultValue);
+end;
+@ %def ReadBoolean
+
+\subsection{Printing the configuration on the terminal}
+
+In this section we implement the function [[PrintConfiguration]] for
+both [[phid]] and [[phisky]].
+
+<<High-level functions for the [[phid]] program>>=
+procedure PrintConfiguration(const Configuration : TPhiDConfiguration);
+begin
+    with Configuration do
+    begin
+        WriteFileNames('[Pointings]', PointingFileNames);
+        WriteFileNames('[Main beam matrices]', MbMatrixFileNames);
+        WriteFileNames('[Sidelobe matrices]', SlMatrixFileNames);
+
+        WriteLn('[Input]');
+        WriteLn('satellite_velocity = ', SatelliteVelocityFileName);
+        WriteLn;
+
+        WriteLn('[Output]');
+        WriteLn('nside = ', Nside);
+        WriteLn('output_file_name = ', OutputMapFileName);
+        WriteQuantiles('quantiles', Quantiles);
+        WriteLn('quantiles_file_name', QuantileTableFileName);
+        WriteLn('save_tods = ', SaveTods);
+        if SaveTods then
+            WriteLn('tod_file_path = ', TodFilePath);
+    end;
+end;
+@ %def PrintConfiguration
+
+<<High-level functions for the [[phisky]] program>>=
+procedure PrintConfiguration(const Configuration : TPhiSkyConfiguration);
+begin
+    with Configuration do
+    begin
+        WriteFileNames('[Pointings]', PointingFileNames);
+        WriteFileNames('[Temperatures]', TemperatureFileNames);
+        WriteFileNames('[Main ringsets]', MbRingsetFileNames);
+        WriteFileNames('[Side ringsets]', SlRingsetFileNames);
+
+        WriteLn('[Output]');
+        WriteLn('interpolation_order = ', InterpolationOrder);
+        WriteLn('nside = ', Nside);
+        WriteLn('output_file_name = ', OutputMapFileName);
+        WriteQuantiles('quantiles', Quantiles);
+        WriteLn('quantiles_file_name', QuantileTableFileName);
+        WriteLn('save_tods = ', SaveTods);
+        if SaveTods then
+            WriteLn('tod_file_path = ', TodFilePath);
+    end;
+end;
+@ %def PrintConfiguration
+
+The two implementations of [[PrintConfiguration]] use
+[[WriteFileNames]] to write a list of file names on the screen and
+[[WriteQuantiles]] to write the list of quantiles to use in producing
+the reduced TODs. The implementation of the former is fairly trivial:
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure WriteFileNames(const SectName : String;
+                         const NameList : TStringArray);
+var
+    Idx : Integer;
+
+begin
+    WriteLn(SectName);
+    for Idx := 0 to Length(NameList) - 1 do
+        WriteLn(Format('file_name_%.4d = %s',
+                       [Idx, NameList[Idx]]));
+
+    WriteLn;
+end;
+@ %def WriteFileNames
+
+The procedure [[WriteQuantiles]] writes a nicely formatted list of
+comma-separated percentages on the standard output. It is just called
+once, but moving this code out of [[PrintConfiguration]] improves the
+readability of the latter.
+
+<<General functions (shared between [[phisky]] and [[phid]])>>=
+procedure WriteQuantiles(const KeyName : String;
+                         const Quantiles : TPercentageArray);
+var
+    Idx : Integer;
+
+begin
+    Write(KeyName, ' = ');
+    for Idx := 0 to Length(Quantiles) - 1 do
+    begin
+        Write(Quantiles[Idx]);
+        if Idx < High(Quantiles) then
+            Write(', ')
+        else
+            WriteLn;
+    end;
+end;
+@ %def WriteQuantiles
+
+\section{Other helper functions}
+
+\subsection{Loading sets of convolution matrices}
+
+Here is a straightforward implementation of the procedure
+[[LoadConvolutionMatrices]].
+
+<<High-level functions for the [[phid]] program>>=
+procedure LoadConvolutionMatrices(const FileNames : TStringArray;
+                                  out Matrices : TConvMatrixArray);
+var
+    Idx : Integer;
+    CurFileName : String;
+
+begin
+    SetLength(Matrices, Length(FileNames));
+    for Idx := 0 to Length(FileNames) - 1 do
+    begin
+        CurFileName := FileNames[Idx];
+        Log(Format('Reading file %s', [CurFileName]));
+        LoadConvolutionMatrix(CurFileName, Matrices[Idx]);
+    end;
+end;
+@ %def LoadConvolutionMatrices
+
+<<High-level functions for the [[phid]] program>>=
+procedure SumConvMatricesIntensities(const Matrices : TConvMatrixArray;
+                                     const SolSysVelEcl : TVector;
+                                     const SatVel : TSatelliteVelocities;
+                                     const Pointings : TDetectorPointings;
+                                     var DestVector : TDoubleArray);
+var
+    MatIdx, Idx : Integer;
+
+begin
+    SetLength(DestVector, Length(Pointings.Theta));
+    for Idx := 0 to Length(DestVector) - 1 do
+        DestVector[Idx] := 0.0;
+
+    for MatIdx := 0 to Length(Matrices) - 1 do
+    begin
+        Log(Format('Applying convolution matrix %d/%d', [Idx + 1, Length(Matrices)]));
+        for Idx := 0 to Length(Pointings.Theta) - 1 do
+            DestVector[Idx] := DestVector[Idx] +
+                Convolve(Matrices[MatIdx], SolSysVelEcl, SatVel,
+                         Pointings.ObtTimes[Idx],
+                         Pointings.Theta[Idx], Pointings.Phi[Idx], Pointings.Psi[Idx]);
+    end;
+end;
+@ %def SumConvMatricesIntensities
+
+\subsection{Loading sets of ringsets}
+\label{sec:LoadingSetsOfRingsets}
+
+Here we provide a straightforward implementation of the procedure
+[[LoadRingsets]].
+
+<<High-level functions for the [[phisky]] program>>=
+procedure LoadRingsets(const FileNames : TStringArray;
+                       InterpolationOrder : Integer;
+                       out Ringsets : TRingsetArray);
+var
+    Idx : Integer;
+    CurFileName : String;
+
+begin
+    SetLength(Ringsets, Length(FileNames));
+    for Idx := 0 to Length(FileNames) - 1 do
+    begin
+        CurFileName := FileNames[Idx];
+        Log(Format('Reading file %s', [CurFileName]));
+        LoadRingsetFromFile(CurFileName,
+                            InterpolationOrder,
+                            Ringsets[Idx]);
+    end;
+end;
+@ %def LoadRingsets
+
+We need a function which sums all the intensities of a set of
+ringsets, too. This is provided by the [[SumRingsetIntensities]]
+procedure. It uses a callback, [[UpdateUserAboutStatus]], to show how
+much of the TOD has been processed so far. This is useful, as the
+function [[SumRingsetIntensities]] is going to take a lot of time to
+complete when [[phisky]] is run on real data!
+
+<<High-level functions for the [[phisky]] program>>=
+procedure UpdateUserAboutStatus(Idx, NumOfElements : Integer; Data : Pointer);
+var
+    Percentage : Real;
+
+begin
+    if NumOfElements > 0 then
+        Percentage := (Idx * 100.0) / (NumOfElements - 1)
+    else
+        Percentage := 100.0;
+
+    Log(Format('   Ringset application: %d/%d (%.1f%%)',
+               [Idx + 1, NumOfElements, Percentage]));
+end;
+
+procedure SumRingsetIntensities(const Ringsets : TRingsetArray;
+                                const Pointings : TDetectorPointings;
+                                var DestVector : TDoubleArray);
+const
+    LogUpdateDelayInMs = 30000.0; { = 30 s }
+var
+    Idx : Integer;
+begin
+    SetLength(DestVector, Length(Pointings.Theta));
+    for Idx := 0 to Length(DestVector) - 1 do
+        DestVector[Idx] := 0.0;
+
+    for Idx := 0 to Length(Ringsets) - 1 do
+    begin
+        Log(Format('Applying ringset %d/%d', [Idx + 1, Length(Ringsets)]));
+        GetRingsetIntensities(Ringsets[Idx], Pointings.Theta,
+                              Pointings.Phi, Pointings.Psi,
+                              DestVector, AddElements,
+                              @UpdateUserAboutStatus, LogUpdateDelayInMs, nil);
+    end;
+end;
+@ %def SumRingsetIntensities
+
+We provide here an implementation of [[MemoryUsed]], which is used by
+[[phisky]] to quantify how much memory is used by the ringsets. The
+unit [[Ringsets]] already provides a function [[BytesUsed]], which
+returns the number of bytes used by a [[TRingset]] record. We wrap
+this into a more user-frendly function, which calculates the memory
+needed by \emph{all} the ringsets in a [[TPhiSkyInputData]] record and
+the $\Tsky$ map, and formats the result using the proper measure unit.
+
+<<High-level functions for the [[phisky]] program>>=
+function MemoryUsed(const InputData : TPhiSkyInputData) : String;
+const
+    Units : Array[1..4] of ShortString = ('bytes', 'KB', 'MB', 'GB');
+
+var
+    Size : Real = 0.0;
+    FormattedNum : String;
+    Idx, UnitIdx : Integer;
+
+begin
+    with InputData do
+    begin
+        for Idx := 0 to Length(MbRingsets) - 1 do
+            Size := Size + BytesUsed(MbRingsets[Idx]);
+
+        for Idx := 0 to Length(SlRingsets) -  1 do
+            Size := Size + BytesUsed(SlRingsets[Idx]);
+    end;
+
+    UnitIdx := Low(Units);
+    while (Size > 10 * 1024) and (UnitIdx < High(Units)) do
+    begin
+        Size := Size / 1024;
+        Inc(UnitIdx);
+    end;
+
+    Str(Size:0:1, FormattedNum); { Just one digit after the separator }
+    Result := FormattedNum + ' ' + Units[UnitIdx];
+end;
+@ %def MemoryUsed
+
+\bibliography{phiskyandd}
+
+\section{Index of symbols}
+
+Here we provide a list of the symbols used in the code. Each reference is of
+the form \texttt{nL}, where \texttt{n} is the number of the page and \texttt{L}
+a letter specifying the code chunk within that page starting from ``a''.
+Underlined references point to the definition of the symbol.
+
+\nowebindex
+
+\end{document}
