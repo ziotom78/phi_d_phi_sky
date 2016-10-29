@@ -12,6 +12,7 @@ Pascal](http://freepascal.org/) to compile and run it. Other requirements:
 - CFITSIO (http://heasarc.gsfc.nasa.gov/fitsio/fitsio.html)
 - Make (I used (GNU Make)[https://www.gnu.org/software/make/], but I think it
   might work even with BSD Make)
+- An MPI implementation
 
 # Instructions
 
@@ -52,3 +53,7 @@ https://github.com/ziotom78/phi_d_phi_sky and cite the following papers:
 	}
 
 The first one refers to `phid`, the second one to `phisky`.
+
+# Some background
+
+I wrote a blog post about the creation of the code: http://ziotom78.blogspot.it/2015/01/lfi-data-analysis-with-fpc.html
